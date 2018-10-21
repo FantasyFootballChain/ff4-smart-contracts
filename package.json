@@ -1,0 +1,17 @@
+{
+  "name": "ff4-smart-contracts",
+  "version": "1.0.0",
+  "description": "Smart contracts for Fantasy Football Chain app",
+  "main": "truffle-config.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "GNU GPLv3",
+  "dependencies": {
+    "openzeppelin-solidity": "^1.12.0"
+  }
+}
