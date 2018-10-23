@@ -20,6 +20,7 @@ contract FantasyFootballChain is Ownable {
 	mapping(uint => Squad) squads;
 	mapping(address => mapping(uint => mapping(uint => mapping(uint => uint)))) userSeasonLeagueRoundSquadIndex;
 	mapping(address => mapping(uint => mapping(uint => uint[]))) userSeasonLeagueSquadIndexes;
+	mapping(uint => mapping(uint => mapping(uint => uint[]))) seasonLeagueRoundSquadIndexes;
 	mapping(uint => mapping(uint => mapping(uint => uint))) seasonLeagueRoundSquadCount;
 	mapping(uint => mapping(uint => mapping(uint => uint))) seasonLeagueRoundStake;
 
@@ -198,6 +199,26 @@ contract FantasyFootballChain is Ownable {
 	//=============
 
 	/**
+	 * @dev Checks whether all squads in round have terminal status
+	 * @param _index squad index
+	 * @return whether all squads have terminal status
+	 */
+	function checkAllSquadsHaveTerminalStatus(uint _index) public returns(bool) {
+		// validation
+		require(_index < squadsCount);
+		// if squad status is ToBeValidated or Validated then not all squads are updated for current round
+		bool allSquadsHaveTerminalStatus = true;
+		uint[] memory squadIndexes = seasonLeagueRoundSquadIndexes[squads[_index].seasonId][squads[_index].leagueId][squads[_index].roundId];
+		for(uint i = 0; i < squadIndexes.length; i++) {
+			if(squads[squadIndexes[i]].state == SquadState.ToBeValidated || squads[squadIndexes[i]].state == SquadState.Validated) {
+				allSquadsHaveTerminalStatus = false;
+				break;
+			}
+		}
+		return allSquadsHaveTerminalStatus;
+	}
+
+	/**
 	 * @dev Creates and funds a new squad
 	 * @param _seasonId season id
 	 * @param _leaguedId league id
@@ -238,7 +259,41 @@ contract FantasyFootballChain is Ownable {
 		squads[squadsCount] = squad;
 		userSeasonLeagueRoundSquadIndex[msg.sender][_seasonId][_leagueId][_roundId] = squadsCount;
 		userSeasonLeagueSquadIndexes[msg.sender][_seasonId][_leagueId].push(squadsCount);
+		seasonLeagueRoundSquadIndexes[_seasonId][_leagueId][_roundId].push(squadsCount);
 		squadsCount = squadsCount.add(1);
+	}
+
+	/**
+	 * @dev Returns total sum of stakes in wei in validated squads
+	 * @param _seasonId season id
+	 * @param _leagueId league id
+	 * @param _roundId round id
+	 * @return sum of stakes of validated squads
+	 */
+	function getRoundStake(uint _seasonId, uint _leagueId, uint _roundId) external returns(uint) {
+		return seasonLeagueRoundStake[_seasonId][_leagueId][_roundId];
+	}
+
+	/**
+	 * @dev Returns number of validated squads in round by season, league and round
+	 * @param _seasonId season id
+	 * @param _leagueId league id
+	 * @param _roundId round id
+	 * @return number of validated squads in round
+	 */
+	function getRoundSquadCount(uint _seasonId, uint _leagueId, uint _roundId) external returns(uint) {
+		return seasonLeagueRoundSquadCount[_seasonId][_leagueId][_roundId];
+	}
+
+	/**
+	 * @dev Returns array of squad indexes by season, league and round
+	 * @param _seasonId season id
+	 * @param _leagueId league id
+	 * @param _roundId round id
+	 * @return array of squad indexes
+	 */
+	function getRoundSquadIndexes(uint _seasonId, uint _leagueId, uint _roundId) external returns(uint[]) {
+		return seasonLeagueRoundSquadIndexes[_seasonId][_leagueId][_roundId];
 	}
 
 	/**
@@ -252,22 +307,79 @@ contract FantasyFootballChain is Ownable {
 	}
 
 	/**
+	 * @dev Returns squad index by user address, season, league and round
+	 * @param _userAddress user address
+	 * @param _seasonId season id
+	 * @param _leagueId league id
+	 * @param _roundId round id
+	 * @return squad index
+	 */
+	function getUserSquadIndex(address _userAddress, uint _seasonId, uint _leagueId, uint _roundId) external returns(uint) {
+		return userSeasonLeagueRoundSquadIndex[_userAddress][_seasonId][_leagueId][_roundId];
+	}
+
+	/**
+	 * @dev Returns array of squad indexes by user address, season and league
+	 * @param _userAddress user address
+	 * @param _seasonId season id
+	 * @param _leagueId league id
+	 * @return squad indexes
+	 */
+	function getUserSquadIndexes(address _userAddress, uint _seasonId, uint _leagueId) external returns(uint[]) {
+		return userSeasonLeagueSquadIndexes[_userAddress][_seasonId][_leagueId];
+	}
+
+	/**
+	 * @dev Returns result user win sum
+	 * @param _index squad index
+	 * @return user win sum in wei
+	 */
+	function getWinSum(uint _index) public onlyInState(_index, SquadState.Win) returns(uint) {
+		// validation
+		require(squads[_index].userAddress == msg.sender);
+		require(checkAllSquadsHaveTerminalStatus(_index));
+		// calculating win sum
+		uint totalWinSum = 0;
+		uint totalLoseSum = 0;
+		uint[] memory squadIndexes = seasonLeagueRoundSquadIndexes[squads[_index].seasonId][squads[_index].leagueId][squads[_index].roundId];
+		for(uint i = 0; i < squadIndexes.length; i++) {
+			if(squads[squadIndexes[i]].state == SquadState.Win || squads[squadIndexes[i]].state == SquadState.Redeemed) {
+				totalWinSum = totalWinSum.add(squads[squadIndexes[i]].stake);
+			}
+			if(squads[squadIndexes[i]].state == SquadState.Lose) {
+				totalLoseSum = totalLoseSum.add(squads[squadIndexes[i]].stake);
+			}
+		}
+		uint ratio;
+		if(totalWinSum == 0) totalWinSum = 1;
+		if(totalLoseSum == 0) totalLoseSum = 1;
+		if(totalLoseSum > totalWinSum) {
+			ratio = totalLoseSum.div(totalWinSum).mul(10000);
+		} else {
+			ratio = totalWinSum.div(totalLoseSum).mul(10000);
+		}
+		uint winSum = squads[_index].stake.add(squads[_index].stake.div(10000).mul(ratio));
+		return winSum;
+	}
+
+	/**
 	 * @dev Withdraws win sum if user's squad won
 	 * @param _index
 	 */
 	function withdrawWinSum(uint _index) external onlyInState(_index, SquadState.Win) {
 		// validation
 		require(squads[_index].userAddress == msg.sender);
+		require(checkAllSquadsHaveTerminalStatus(_index));
 		// update squad properties
+		uint winSumPlusFeeInWei = getWinSum(_index);
 		squads[_index].state = SquadState.Redeemed;
 		squads[_index].lastUpdatedAt = now;
-		squads[_index].platformFeeInWei = squads[_index].winSumInWei.div(10000).mul(platformFeeRate);
-		// transfer win sum and platform fee
-		uint winSumMinusFeeInWei = 0;
-		if(squads[_index].platformFeeInWei < squads[_index].winSumInWei) {
-			winSumMinusFeeInWei = squads[_index].winSumInWei.sub(squads[_index].platformFeeInWei);
+		squads[_index].platformFeeInWei = winSumPlusFeeInWei.div(10000).mul(platformFeeRate);
+		if(squads[_index].platformFeeInWei < winSumPlusFeeInWei) {
+			squads[_index].winSumInWei = winSumPlusFeeInWei.sub(squads[_index].platformFeeInWei);
 		}
-		squads[_index].userAddress.transfer(winSumMinusFeeInWei);
+		// transfer win sum and platform fee
+		squads[_index].userAddress.transfer(squads[_index].winSumInWei);
 		platformFeeAddress.transfer(squads[_index].platformFeeInWei);
 	}
 
