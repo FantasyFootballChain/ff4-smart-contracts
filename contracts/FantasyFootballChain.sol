@@ -1,5 +1,4 @@
 pragma solidity ^0.4.24;
-pragma experimental ABIEncoderV2;
 
 import "openzeppelin-solidity/contracts/math/SafeMath.sol";
 import "openzeppelin-solidity/contracts/ownership/Ownable.sol";
@@ -63,6 +62,8 @@ contract FantasyFootballChain is Ownable {
 
 	/**
 	 * @dev Checks that squad is in particular state
+	 * @param _index squad index
+	 * @param _state squad state
 	 */
 	modifier onlyInState(uint _index, SquadState _state) {
 		require(_index < squadsCount);
@@ -79,8 +80,16 @@ contract FantasyFootballChain is Ownable {
 	}
 
 	/**
+	 * @dev Modifier checks that squad index exists
+	 */
+	modifier validIndex(uint _index) {
+		require(_index < squadsCount);
+		_;
+	}
+
+	/**
 	 * @dev Constructor
-	 * @param _oracleAddrses oracle address who updates squads' states
+	 * @param _oracleAddress oracle address who updates squads' states
 	 * @param _platformFeeAddress address where platform fee from all winnings will be sent
 	 * @param _platformFeeRate platform fee rate, 10000 == 100%
 	 */
@@ -167,9 +176,9 @@ contract FantasyFootballChain is Ownable {
 		Squad storage squad = squads[_index];
 		squad.state = SquadState.Validated;
 		squad.lastUpdatedAt = now;
-		// update sums
+		// update global round values
 		seasonLeagueRoundSquadCount[squad.seasonId][squad.leagueId][squad.roundId] = seasonLeagueRoundSquadCount[squad.seasonId][squad.leagueId][squad.roundId].add(1);
-		seasonLeagueRoundStake[squad.seasonId][squad.leagueId][squad.roundId] = seasonLeagueRoundStake[squad.seasonId][squad.leagueId][squad.roundId].add(msg.value);
+		seasonLeagueRoundStake[squad.seasonId][squad.leagueId][squad.roundId] = seasonLeagueRoundStake[squad.seasonId][squad.leagueId][squad.roundId].add(squad.stake);
 	}
 
 	/**
@@ -185,12 +194,10 @@ contract FantasyFootballChain is Ownable {
 	/**
 	 * @dev Sets squad's state to win
 	 * @param _index squad index
-	 * @param _winSumInWei win sum in wei
 	 */
-	function autoMarkWin(uint _index, uint _winSumInWei) external onlyOracle onlyInState(_index, SquadState.Validated) {
+	function autoMarkWin(uint _index) external onlyOracle onlyInState(_index, SquadState.Validated) {
 		// update squad properties
 		squads[_index].state = SquadState.Win;
-		squads[_index].winSumInWei = _winSumInWei;
 		squads[_index].lastUpdatedAt = now;
 	}
 
@@ -203,9 +210,7 @@ contract FantasyFootballChain is Ownable {
 	 * @param _index squad index
 	 * @return whether all squads have terminal status
 	 */
-	function checkAllSquadsHaveTerminalStatus(uint _index) public returns(bool) {
-		// validation
-		require(_index < squadsCount);
+	function checkAllSquadsHaveTerminalStatus(uint _index) public view validIndex(_index) returns(bool) {
 		// if squad status is ToBeValidated or Validated then not all squads are updated for current round
 		bool allSquadsHaveTerminalStatus = true;
 		uint[] memory squadIndexes = seasonLeagueRoundSquadIndexes[squads[_index].seasonId][squads[_index].leagueId][squads[_index].roundId];
@@ -221,7 +226,7 @@ contract FantasyFootballChain is Ownable {
 	/**
 	 * @dev Creates and funds a new squad
 	 * @param _seasonId season id
-	 * @param _leaguedId league id
+	 * @param _leagueId league id
 	 * @param _roundId round id
 	 * @param _playerIds array of player ids in the main squad
 	 * @param _benchPlayerIds array of player ids on the bench
@@ -235,14 +240,12 @@ contract FantasyFootballChain is Ownable {
 		uint[] _benchPlayerIds,
 		uint _captainId
 	) external payable {
-		Squad memory squad = squads[userSeasonLeagueRoundSquadIndex[msg.sender][_seasonId][_leagueId][_roundId]];
 		// validation
 		require(_playerIds.length == 11);
 		require(_benchPlayerIds.length == 4);
 		require(msg.value > 0);
-		require(!squad.initialized);
-		require(squad.userAddress == address(0) || squad.userAddress == msg.sender);
 		// save new squad
+		Squad memory squad;
 		squad.seasonId = _seasonId;
 		squad.leagueId = _leagueId;
 		squad.roundId = _roundId;
@@ -270,7 +273,7 @@ contract FantasyFootballChain is Ownable {
 	 * @param _roundId round id
 	 * @return sum of stakes of validated squads
 	 */
-	function getRoundStake(uint _seasonId, uint _leagueId, uint _roundId) external returns(uint) {
+	function getRoundStake(uint _seasonId, uint _leagueId, uint _roundId) external view returns(uint) {
 		return seasonLeagueRoundStake[_seasonId][_leagueId][_roundId];
 	}
 
@@ -281,7 +284,7 @@ contract FantasyFootballChain is Ownable {
 	 * @param _roundId round id
 	 * @return number of validated squads in round
 	 */
-	function getRoundSquadCount(uint _seasonId, uint _leagueId, uint _roundId) external returns(uint) {
+	function getRoundSquadCount(uint _seasonId, uint _leagueId, uint _roundId) external view returns(uint) {
 		return seasonLeagueRoundSquadCount[_seasonId][_leagueId][_roundId];
 	}
 
@@ -292,18 +295,62 @@ contract FantasyFootballChain is Ownable {
 	 * @param _roundId round id
 	 * @return array of squad indexes
 	 */
-	function getRoundSquadIndexes(uint _seasonId, uint _leagueId, uint _roundId) external returns(uint[]) {
+	function getRoundSquadIndexes(uint _seasonId, uint _leagueId, uint _roundId) external view returns(uint[]) {
 		return seasonLeagueRoundSquadIndexes[_seasonId][_leagueId][_roundId];
 	}
 
 	/**
-	 * @dev Returns squad info by index
+	 * @dev Returns squad finance info
 	 * @param _index squad index
-	 * @return squad info
+	 * @return squad finance info
 	 */
-	function getSquad(uint _index) external returns(Squad) {
-		require(_index < squadsCount);
-		return squads[_index];
+	function getSquadFinanceInfo(uint _index) external view validIndex(_index) returns(uint, uint, uint) {
+		return (
+			squads[_index].stake,
+			squads[_index].winSumInWei,
+			squads[_index].platformFeeInWei
+		);
+	}
+
+	/**
+	 * @dev Returns squad players info
+	 * @param _index squad index
+	 * @return squad players info
+	 */
+	function getSquadPlayersInfo(uint _index) external view validIndex(_index) returns(uint, uint[], uint[]) {
+		return (
+			squads[_index].captainId,
+			squads[_index].playerIds,
+			squads[_index].benchPlayerIds
+		);
+	}
+
+	/**
+	 * @dev Returns squad system info
+	 * @param _index squad index
+	 * @return squad system info
+	 */
+	function getSquadSystemInfo(uint _index) external view validIndex(_index) returns(uint, uint, uint, address, SquadState, bool) {
+		return (
+			squads[_index].seasonId,
+			squads[_index].leagueId,
+			squads[_index].roundId,
+			squads[_index].userAddress,
+			squads[_index].state,
+			squads[_index].initialized
+		);
+	}
+
+	/**
+	 * @dev Returns squad time info
+	 * @param _index squad index
+	 * @return squad time info
+	 */
+	function getSquadTimeInfo(uint _index) external view validIndex(_index) returns(uint, uint) {
+		return (
+			squads[_index].createdAt,
+			squads[_index].lastUpdatedAt
+		);
 	}
 
 	/**
@@ -314,7 +361,7 @@ contract FantasyFootballChain is Ownable {
 	 * @param _roundId round id
 	 * @return squad index
 	 */
-	function getUserSquadIndex(address _userAddress, uint _seasonId, uint _leagueId, uint _roundId) external returns(uint) {
+	function getUserSquadIndex(address _userAddress, uint _seasonId, uint _leagueId, uint _roundId) external view returns(uint) {
 		return userSeasonLeagueRoundSquadIndex[_userAddress][_seasonId][_leagueId][_roundId];
 	}
 
@@ -325,7 +372,7 @@ contract FantasyFootballChain is Ownable {
 	 * @param _leagueId league id
 	 * @return squad indexes
 	 */
-	function getUserSquadIndexes(address _userAddress, uint _seasonId, uint _leagueId) external returns(uint[]) {
+	function getUserSquadIndexes(address _userAddress, uint _seasonId, uint _leagueId) external view returns(uint[]) {
 		return userSeasonLeagueSquadIndexes[_userAddress][_seasonId][_leagueId];
 	}
 
@@ -334,14 +381,15 @@ contract FantasyFootballChain is Ownable {
 	 * @param _index squad index
 	 * @return user win sum in wei
 	 */
-	function getWinSum(uint _index) public onlyInState(_index, SquadState.Win) returns(uint) {
+	function getWinSum(uint _index) public view onlyInState(_index, SquadState.Win) returns(uint) {
 		// validation
 		require(squads[_index].userAddress == msg.sender);
 		require(checkAllSquadsHaveTerminalStatus(_index));
 		// calculating win sum
+		Squad memory squad = squads[_index];
 		uint totalWinSum = 0;
 		uint totalLoseSum = 0;
-		uint[] memory squadIndexes = seasonLeagueRoundSquadIndexes[squads[_index].seasonId][squads[_index].leagueId][squads[_index].roundId];
+		uint[] memory squadIndexes = seasonLeagueRoundSquadIndexes[squad.seasonId][squad.leagueId][squad.roundId];
 		for(uint i = 0; i < squadIndexes.length; i++) {
 			if(squads[squadIndexes[i]].state == SquadState.Win || squads[squadIndexes[i]].state == SquadState.Redeemed) {
 				totalWinSum = totalWinSum.add(squads[squadIndexes[i]].stake);
@@ -350,21 +398,21 @@ contract FantasyFootballChain is Ownable {
 				totalLoseSum = totalLoseSum.add(squads[squadIndexes[i]].stake);
 			}
 		}
-		uint ratio;
+		uint winSum;
 		if(totalWinSum == 0) totalWinSum = 1;
-		if(totalLoseSum == 0) totalLoseSum = 1;
 		if(totalLoseSum > totalWinSum) {
-			ratio = totalLoseSum.div(totalWinSum).mul(10000);
+			winSum = squad.stake.mul(2);
 		} else {
-			ratio = totalWinSum.div(totalLoseSum).mul(10000);
+			uint ratio = totalLoseSum.mul(10000).div(totalWinSum);
+			uint toAdd = squad.stake.mul(ratio).div(10000);
+			winSum = squad.stake.add(toAdd);
 		}
-		uint winSum = squads[_index].stake.add(squads[_index].stake.div(10000).mul(ratio));
 		return winSum;
 	}
 
 	/**
 	 * @dev Withdraws win sum if user's squad won
-	 * @param _index
+	 * @param _index squad index
 	 */
 	function withdrawWinSum(uint _index) external onlyInState(_index, SquadState.Win) {
 		// validation

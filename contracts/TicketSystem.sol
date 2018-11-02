@@ -1,5 +1,4 @@
 pragma solidity ^0.4.24;
-pragma experimental ABIEncoderV2;
 
 import "openzeppelin-solidity/contracts/ownership/Ownable.sol";
 
@@ -128,8 +127,8 @@ contract TicketSystem is Ownable {
      */
     function createTicket(uint _squadIndex, string _message) external {
         // validation
-        FantasyFootballChain.Squad memory squad = ff4.getSquad(_squadIndex);
-        require(squad.userAddress == msg.sender);
+        (,,,address userAddress,,) = ff4.getSquadSystemInfo(_squadIndex);
+        require(userAddress == msg.sender);
         // create and save ticket
         Ticket memory ticket;
         ticket.createdAt = now;
@@ -143,12 +142,36 @@ contract TicketSystem is Ownable {
     }
 
     /**
-     * @dev Returns ticket by index
-     * @param _ticketIndex ticket id
-     * @return ticket info
+     * @dev Returns author and message from ticket
+     * @param _ticketIndex ticket index
+     * @param _messageIndex message index
+     * @return author address and message
      */
-    function getTicket(uint _ticketIndex) public validTicketIndex(_ticketIndex) returns(Ticket) {
-        return tickets[_ticketIndex];
+    function getTicketMessage(uint _ticketIndex, uint _messageIndex) external view validTicketIndex(_ticketIndex) returns(address, string) {
+        // validation
+        require(tickets[_ticketIndex].messagesCount > 0);
+        require(_messageIndex < tickets[_ticketIndex].messagesCount);
+        // return author address and message
+        return (
+            tickets[_ticketIndex].authors[_messageIndex],
+            tickets[_ticketIndex].messages[_messageIndex]
+        );
+    }
+
+    /**
+     * @dev Returns ticket system info by index
+     * @param _ticketIndex ticket id
+     * @return ticket system info
+     */
+    function getTicketSystemInfo(uint _ticketIndex) external view validTicketIndex(_ticketIndex) returns(uint, uint, uint, uint, TicketState, address) {
+        return (
+            tickets[_ticketIndex].createdAt,
+            tickets[_ticketIndex].closedAt,
+            tickets[_ticketIndex].lastUpdatedAt,
+            tickets[_ticketIndex].messagesCount,
+            tickets[_ticketIndex].state,
+            tickets[_ticketIndex].userAddress
+        );
     }
 
     /**
@@ -173,7 +196,7 @@ contract TicketSystem is Ownable {
      * @param _author author address
      * @param _message ticket message
      */
-    function _writeMessageToTicket(uint _ticketIndex, address _author, string _message) private validTicketIndex(_ticketIndex) {
+    function _writeMessageToTicket(uint _ticketIndex, address _author, string _message) internal validTicketIndex(_ticketIndex) {
         // validation
         require(_author != address(0));
         // save message
