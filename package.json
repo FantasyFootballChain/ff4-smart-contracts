@@ -7,7 +7,7 @@
     "test": "test"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "scripts/test.sh"
   },
   "author": "",
   "license": "GNU GPLv3",
@@ -15,6 +15,7 @@
     "chai": "^4.2.0",
     "chai-as-promised": "^7.1.1",
     "chai-bignumber": "^2.0.2",
+    "ganache-cli": "^6.1.8",
     "openzeppelin-solidity": "^1.12.0"
   }
 }

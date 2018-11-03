@@ -49,7 +49,8 @@ contract TicketSystem is Ownable {
      * @dev Modifier checks that ticket exists
      */
     modifier validTicketIndex(uint _ticketIndex) {
-        require(_ticketIndex < ticketsCount);
+        // ticket should exist or it should be the 1st ticket
+        require(_ticketIndex < ticketsCount || ticketsCount == 0);
         _;
     }
 
@@ -149,28 +150,11 @@ contract TicketSystem is Ownable {
      */
     function getTicketMessage(uint _ticketIndex, uint _messageIndex) external view validTicketIndex(_ticketIndex) returns(address, string) {
         // validation
-        require(tickets[_ticketIndex].messagesCount > 0);
         require(_messageIndex < tickets[_ticketIndex].messagesCount);
         // return author address and message
         return (
             tickets[_ticketIndex].authors[_messageIndex],
             tickets[_ticketIndex].messages[_messageIndex]
-        );
-    }
-
-    /**
-     * @dev Returns ticket system info by index
-     * @param _ticketIndex ticket id
-     * @return ticket system info
-     */
-    function getTicketSystemInfo(uint _ticketIndex) external view validTicketIndex(_ticketIndex) returns(uint, uint, uint, uint, TicketState, address) {
-        return (
-            tickets[_ticketIndex].createdAt,
-            tickets[_ticketIndex].closedAt,
-            tickets[_ticketIndex].lastUpdatedAt,
-            tickets[_ticketIndex].messagesCount,
-            tickets[_ticketIndex].state,
-            tickets[_ticketIndex].userAddress
         );
     }
 
@@ -200,8 +184,8 @@ contract TicketSystem is Ownable {
         // validation
         require(_author != address(0));
         // save message
-        tickets[_ticketIndex].messages[tickets[_ticketIndex].messagesCount] = _message;
-        tickets[_ticketIndex].authors[tickets[_ticketIndex].messagesCount] = _author;
+        tickets[_ticketIndex].messages.push(_message);
+        tickets[_ticketIndex].authors.push(_author);
         tickets[_ticketIndex].messagesCount = tickets[_ticketIndex].messagesCount.add(1);
         tickets[_ticketIndex].lastUpdatedAt = now;
     }
