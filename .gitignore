@@ -3,3 +3,6 @@ build
 
 # npm
 node_modules
+
+# env
+env.js
