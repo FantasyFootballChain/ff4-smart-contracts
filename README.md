@@ -7,6 +7,8 @@ How to deploy
 Create `env.js` file in the project root and set environment variables:
 ```
 module.exports = {
+	INFURA_API_KEY: "", // api key for infura.io
+	MNEMONIC: "", // mnemonic for migrations, 1st will be used for deployment
 	ORACLE_ADDRESS: "", // address that validates squads
 	PLATFORM_FEE_ADDRESS: "", // fee address
 	PLATFORM_FEE_RATE: 1000 // fee rate, 10000 == 100%
